@@ -30,3 +30,7 @@ Example:
 search_api("SDL_Init")
 → "bool SDL_Init(SDL_InitFlags flags);"
 ```
+
+## Extending the Index
+
+Drop a `.api` file with function declarations in the `apis/` folder and restart the MCP server to update the index.
