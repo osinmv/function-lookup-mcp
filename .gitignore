@@ -1,0 +1,6 @@
+.claude
+.ropeproject
+__pycache__
+venv
+.mcp.json
+*.log
