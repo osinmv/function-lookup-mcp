@@ -4,21 +4,10 @@ An MCP server that provides function signature lookups for any API. Comes with S
 
 ## Installation
 
-1. Install dependencies:
 ```bash
-pip install -r requirements.txt
-```
-
-2. Add to Claude Code MCP configuration:
-```json
-{
-  "mcpServers": {
-    "sdl3-lookup": {
-      "command": "python",
-      "args": ["path/to/main.py"]
-    }
-  }
-}
+git clone git@github.com:osinmv/function-lookup-mcp.git
+cd function-lookup-mcp
+claude mcp add api-lookup $(pwd)/run.sh -s user
 ```
 
 ## Usage
@@ -29,6 +18,14 @@ Example:
 ```
 search_api("SDL_Init")
 → "bool SDL_Init(SDL_InitFlags flags);"
+```
+
+**`list_indexed_apis()`** - List all indexed API files
+
+Example:
+```
+list_indexed_apis()
+→ "Indexed API files: sdl3"
 ```
 
 ## Extending the Index
