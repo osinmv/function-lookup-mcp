@@ -7,11 +7,11 @@ from collections import defaultdict
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(), logging.FileHandler("sdl3-mcp-server.log")],
+    handlers=[logging.StreamHandler(), logging.FileHandler("api-lookup-mcp-server.log")],
 )
 logger = logging.getLogger(__name__)
 
-SERVER = FastMCP("sdl3-lookup")
+SERVER = FastMCP("api-lookup")
 WORD_INDEX = defaultdict(list)
 DECLARATIONS = []
 INDEXED_APIS = []
@@ -120,7 +120,7 @@ def list_indexed_apis() -> str:
 
 
 if __name__ == "__main__":
-    logger.info("Starting SDL3 MCP Server")
+    logger.info("Starting API Lookup MCP Server")
     index_apis(Path("apis"))
     logger.info("Starting FastMCP server...")
     SERVER.run(transport="stdio")
