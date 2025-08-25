@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 SERVER = FastMCP("sdl3-lookup")
 WORD_INDEX = defaultdict(list)
 DECLARATIONS = []
+INDEXED_APIS = []
 
 
 def extract_words(line: str) -> list[str]:
@@ -37,6 +38,7 @@ def index_api_file(path: Path):
                 for word in words:
                     WORD_INDEX[word].append(declaration_idx)
 
+    INDEXED_APIS.append(path.stem)
     logger.info(f"Indexing complete for {path}. Processed {line_count} API entries")
 
 
@@ -76,6 +78,19 @@ def lookup(query: str):
 
 @SERVER.tool()
 def search_api(function_name: str) -> str:
+    """
+    Search for API function declarations by function name.
+    
+    This tool searches through indexed API documentation to find function 
+    declarations that match the given function name and returns the complete 
+    function signature if found.
+    
+    Args:
+        function_name: The name of the function to search for
+    
+    Returns:
+        The complete function declaration if found, or "No matches found" if no match exists.
+    """
     logger.info(f"API search requested for: '{function_name}'")
     result = lookup(function_name)
     if result:
@@ -84,6 +99,24 @@ def search_api(function_name: str) -> str:
     else:
         logger.info("No matches found for function_name")
         return "No matches found"
+
+
+@SERVER.tool()
+def list_indexed_apis() -> str:
+    """
+    List all currently indexed API files.
+    
+    Returns a list of API files that have been indexed and are available for searching.
+    
+    Returns:
+        A comma-separated list of indexed API file names.
+    """
+    logger.info("Listing indexed APIs requested")
+    
+    if not INDEXED_APIS:
+        return "No API files have been indexed yet."
+    
+    return f"Indexed API files: {', '.join(INDEXED_APIS)}"
 
 
 if __name__ == "__main__":
