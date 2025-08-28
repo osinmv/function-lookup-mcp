@@ -17,9 +17,7 @@ class TestApiLookUpMCPServer(unittest.TestCase):
         DECLARATIONS.clear()
         INDEXED_APIS.clear()
 
-
     def test_generate_ctags_integration(self):
-        """Test that ctags generation works with a real header file"""
 
         ctags_file = Path("apis/test_header.ctags")
 
@@ -36,17 +34,18 @@ class TestApiLookUpMCPServer(unittest.TestCase):
                 self.assertIsInstance(result, dict)
                 self.assertTrue(result.get("success", False))
                 self.assertIn("message", result)
-                self.assertEqual(result["message"], "ctags generation and indexing complete")
+                self.assertEqual(
+                    result["message"], "ctags generation and indexing complete")
 
                 add_result = lookup("add_numbers")
                 self.assertIsNotNone(add_result)
-                self.assertIsInstance(add_result, dict)
-                self.assertEqual(add_result["name"], "add_numbers")
+                self.assertIsInstance(add_result, list)
+                self.assertEqual(len(add_result), 1)
+                self.assertEqual(add_result[0]["name"], "add_numbers")
 
             except Exception as e:
                 self.fail(f"generate_ctags raised an exception: {str(e)}")
             finally:
-                # Clean up the created ctags file
                 if ctags_file.exists():
                     ctags_file.unlink()
 

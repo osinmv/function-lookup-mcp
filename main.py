@@ -9,7 +9,8 @@ from collections import defaultdict
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(), logging.FileHandler("api-lookup-mcp-server.log")],
+    handlers=[logging.StreamHandler(), logging.FileHandler(
+        "api-lookup-mcp-server.log")],
 )
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,8 @@ def index_api_file(path: Path):
                 if ctag_entry.get("kind") in ["function", "prototype"]:
                     function_name = ctag_entry.get("name", "")
                     signature = ctag_entry.get("signature", "")
-                    return_type = ctag_entry.get("typeref", "").replace("typename:", "")
+                    return_type = ctag_entry.get(
+                        "typeref", "").replace("typename:", "")
                     function_info = {
                         "name": function_name,
                         "signature": signature,
@@ -41,7 +43,8 @@ def index_api_file(path: Path):
                     WORD_INDEX[function_name].append(len(DECLARATIONS) - 1)
 
     INDEXED_APIS.append(path.stem)
-    logger.info(f"Indexing complete for {path}. Processed {line_count} API entries")
+    logger.info(
+        f"Indexing complete for {path}. Processed {line_count} API entries")
 
 
 def index_apis(apis_dir: Path):
@@ -63,15 +66,15 @@ def index_apis(apis_dir: Path):
     logger.info(f"Total declarations: {len(DECLARATIONS)}")
 
 
-def lookup(query: str) -> Optional[dict]:
+def lookup(query: str) -> Optional[list]:
     logger.info(f"Searching for query: '{query}'")
 
     if query in WORD_INDEX:
         declaration_indices = WORD_INDEX[query]
         if declaration_indices:
-            function_info = DECLARATIONS[declaration_indices[0]]
-            logger.info(f"Match found: '{function_info}'")
-            return function_info
+            matches = [DECLARATIONS[i] for i in declaration_indices]
+            logger.info(f"Found {len(matches)} matches for '{query}'")
+            return matches
 
     logger.info("No match found")
     return None
@@ -83,24 +86,23 @@ def search_api(function_name: str) -> dict:
     Search for API function declarations by function name.
 
     This tool searches through indexed API documentation to find function
-    declarations that match the given function name and returns the function
-    information including name, signature, and return type.
+    declarations that match the given function name and returns all matching
+    function information including name, signature, and return type.
 
     Args:
         function_name: The name of the function to search for
 
     Returns:
-        A dictionary containing function info (name, signature, return_type) if found,
-        or error message if no match exists.
+        A dictionary containing all matching function info with matches list and count.
     """
     logger.info(f"API search requested for: '{function_name}'")
     result = lookup(function_name)
     if result:
-        logger.info(f"Returning result: '{result}'")
-        return result
+        logger.info(f"Returning {len(result)} results")
+        return {"matches": result, "count": len(result)}
     else:
         logger.info("No matches found for function_name")
-        return {"error": "No matches found"}
+        return {"matches": [], "count": 0}
 
 
 @SERVER.tool()
@@ -137,7 +139,8 @@ def generate_ctags(include_directory: str, ctags_filename: str) -> dict:
     Returns:
         Dictionary with success status and details, or error information
     """
-    logger.info(f"Generate ctags requested for directory: '{include_directory}', filename: '{ctags_filename}'")
+    logger.info(
+        f"Generate ctags requested for directory: '{include_directory}', filename: '{ctags_filename}'")
 
     include_path = Path(include_directory)
     if not include_path.exists():
@@ -170,7 +173,8 @@ def generate_ctags(include_directory: str, ctags_filename: str) -> dict:
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode == 0:
             index_api_file(output_file)
-            logger.info(f"ctags generation and indexing complete: {output_file}")
+            logger.info(
+                f"ctags generation and indexing complete: {output_file}")
             return {
                 "success": True,
                 "output_file": str(output_file),
