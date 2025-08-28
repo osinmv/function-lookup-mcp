@@ -17,7 +17,7 @@ claude mcp add api-lookup $(pwd)/run.sh -s user
 
 ## Extending the Index
 
-Use the `generate_ctags()` MCP tool to automatically extract function signatures from header files and add them to the index. Alternatively, you can drop existing ctags files into the `apis/` folder and restart the MCP server to update the index.
+Just ask your coding agent to index your header folder. Alternatively, you can drop existing ctags files into the `apis/` folder and restart the MCP server to update the index.
 
 
 ## MCP functions
