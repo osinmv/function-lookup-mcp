@@ -151,6 +151,7 @@ def generate_ctags(include_directory: str, ctags_filename: str) -> dict:
         return {"success": False, "error": error_msg}
 
     apis_dir = Path("apis")
+    apis_dir.mkdir(exist_ok=True)
 
     output_file = apis_dir / f"{ctags_filename}.ctags"
 
