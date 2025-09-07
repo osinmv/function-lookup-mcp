@@ -2,7 +2,7 @@ import tempfile
 import unittest
 import os
 from pathlib import Path
-from main import lookup, generate_ctags, init_database, search_api, list_indexed_apis
+from main import lookup, generate_ctags, init_database, search_api, list_indexed_apis, list_api_files, list_functions_by_file
 
 
 class TestApiLookUpMCPServer(unittest.TestCase):
@@ -58,6 +58,38 @@ class TestApiLookUpMCPServer(unittest.TestCase):
                 self.assertIsInstance(nonexistent_search, dict)
                 self.assertEqual(nonexistent_search["count"], 0)
                 self.assertEqual(len(nonexistent_search["matches"]), 0)
+
+                files_result = list_api_files("test_header")
+                self.assertIsInstance(files_result, dict)
+                self.assertIn("api_name", files_result)
+                self.assertIn("files", files_result)
+                self.assertIn("count", files_result)
+                self.assertEqual(files_result["api_name"], "test_header")
+                self.assertEqual(files_result["count"], 1)
+                self.assertEqual(len(files_result["files"]), 1)
+                self.assertIn("test.h", files_result["files"][0])
+
+                empty_files_result = list_api_files("nonexistent_api")
+                self.assertIsInstance(empty_files_result, dict)
+                self.assertEqual(empty_files_result["count"], 0)
+                self.assertEqual(len(empty_files_result["files"]), 0)
+
+                file_path = files_result["files"][0]
+                functions_result = list_functions_by_file(
+                    file_path, "test_header")
+                self.assertIsInstance(functions_result, dict)
+                self.assertIn("functions", functions_result)
+                self.assertIn("count", functions_result)
+                self.assertEqual(functions_result["count"], 1)
+                self.assertEqual(len(functions_result["functions"]), 1)
+                self.assertEqual(
+                    functions_result["functions"][0], "add_numbers")
+
+                empty_functions_result = list_functions_by_file(
+                    "nonexistent.h", "test_header")
+                self.assertIsInstance(empty_functions_result, dict)
+                self.assertEqual(empty_functions_result["count"], 0)
+                self.assertEqual(len(empty_functions_result["functions"]), 0)
 
             except Exception as e:
                 self.fail(f"generate_ctags raised an exception: {str(e)}")

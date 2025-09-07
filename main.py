@@ -217,25 +217,27 @@ def index_apis(apis_dir: Path, db_path=None):
 
     files_to_index = []
     files_skipped = 0
-    
+
     for api_file in api_files:
         api_name = api_file.stem
         current_hash = calculate_file_hash(api_file)
         stored_hash = get_stored_file_hash(api_name, db_path)
-        
+
         if stored_hash == current_hash:
             logger.info(f"Skipping {api_file.name} - no changes detected")
             files_skipped += 1
         else:
             logger.info(f"File {api_file.name} has changed - will reindex")
             files_to_index.append(api_file)
-    
+
     if files_to_index:
-        logger.info(f"Indexing {len(files_to_index)} changed files (skipped {files_skipped})")
+        logger.info(
+            f"Indexing {len(files_to_index)} changed files (skipped {files_skipped})")
         for api_file in files_to_index:
             index_api_file(api_file, db_path)
     else:
-        logger.info(f"All {len(api_files)} API files are up to date - no indexing needed")
+        logger.info(
+            f"All {len(api_files)} API files are up to date - no indexing needed")
 
     with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
@@ -330,6 +332,78 @@ def list_indexed_apis() -> dict:
 
 
 @SERVER.tool()
+def list_api_files(api_name: str) -> dict:
+    """
+    Extract a list of files/paths for a given API.
+
+    This tool returns all unique file paths that are indexed for the specified API,
+    showing which files contain functions for that API.
+
+    Args:
+        api_name: The name of the API to get file paths for
+
+    Returns:
+        A dictionary containing the list of file paths and count for the specified API.
+    """
+    logger.info(f"Listing files for API: '{api_name}'")
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT DISTINCT input_file 
+            FROM ctags 
+            WHERE api_file = ? AND input_file IS NOT NULL AND input_file != ''
+            ORDER BY input_file
+        """, (api_name,))
+
+        rows = cursor.fetchall()
+        file_paths = [row[0] for row in rows] if rows else []
+
+        logger.info(f"Found {len(file_paths)} files for API '{api_name}'")
+        return {
+            "api_name": api_name,
+            "files": file_paths,
+            "count": len(file_paths)
+        }
+
+
+@SERVER.tool()
+def list_functions_by_file(file_path: str, api_name: str) -> dict:
+    """
+    Extract all functions from a given file/path.
+
+    This tool returns all functions found in the specified file path within a specific API.
+
+    Args:
+        file_path: The file path to get functions for
+        api_name: The API name to filter results to
+
+    Returns:
+        A dictionary containing all functions found in the specified file.
+    """
+    logger.info(
+        f"Listing functions for file: '{file_path}' in API: '{api_name}'")
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT name
+            FROM ctags 
+            WHERE input_file = ? AND api_file = ? AND ( kind = 'function' OR kind = 'prototype' )
+            ORDER BY line
+        """, (file_path, api_name))
+
+        rows = cursor.fetchall()
+        functions = [row[0] for row in rows] if rows else []
+
+        logger.info(f"Found {len(functions)} functions in file '{file_path}'")
+        return {
+            "functions": functions,
+            "count": len(functions)
+        }
+
+
+@SERVER.tool()
 def generate_ctags(include_directory: str, ctags_filename: str) -> dict:
     """
     Generate ctags files for function signature lookup.
@@ -411,18 +485,18 @@ def generate_ctags(include_directory: str, ctags_filename: str) -> dict:
 if __name__ == "__main__":
     try:
         logger.info("Starting API Lookup MCP Server")
-        
+
         logger.info("Initializing database...")
         init_database()
         logger.info("Database initialization complete")
-        
+
         logger.info("Indexing APIs from 'apis' directory...")
         index_apis(Path("apis"))
         logger.info("API indexing complete")
-        
+
         logger.info("Starting FastMCP server...")
         SERVER.run(transport="stdio")
-        
+
     except Exception as e:
         logger.error(f"Fatal error in main: {str(e)}", exc_info=True)
         raise
