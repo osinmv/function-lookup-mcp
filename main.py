@@ -1,10 +1,11 @@
 import json
+import hashlib
 import logging
+import sqlite3
 import subprocess
 from typing import Optional
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
-from collections import defaultdict
 
 logging.basicConfig(
     level=logging.INFO,
@@ -15,39 +16,194 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 SERVER = FastMCP("api-lookup")
-WORD_INDEX = defaultdict(list)
-DECLARATIONS = []
-INDEXED_APIS = []
+DB_PATH = "ctags_index.db"
 
 
-def index_api_file(path: Path):
+def get_db_connection(db_path=None):
+    """Get a database connection. Use provided path or default."""
+    path = db_path or DB_PATH
+    return sqlite3.connect(path)
+
+
+def calculate_file_hash(file_path: Path) -> str:
+    """Calculate SHA-256 hash of a file."""
+    hash_sha256 = hashlib.sha256()
+    with open(file_path, 'rb') as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_sha256.update(chunk)
+    return hash_sha256.hexdigest()
+
+
+def get_stored_file_hash(api_name: str, db_path=None) -> Optional[str]:
+    """Get the stored hash for an API file."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT file_hash FROM indexed_apis WHERE api_name = ?", (api_name,))
+        result = cursor.fetchone()
+        return result[0] if result else None
+
+
+def update_file_hash(api_name: str, file_hash: str, db_path=None, conn=None):
+    """Update the stored hash for an API file."""
+    if conn is None:
+        with get_db_connection(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO indexed_apis (api_name, file_hash) VALUES (?, ?)
+            """, (api_name, file_hash))
+            conn.commit()
+    else:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO indexed_apis (api_name, file_hash) VALUES (?, ?)
+        """, (api_name, file_hash))
+
+
+def init_database(db_path=None):
+    """Initialize the SQLite database with comprehensive ctags schema."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ctags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                
+                name TEXT NOT NULL,
+                input_file TEXT,
+                pattern TEXT,
+                kind TEXT,
+                line INTEGER,
+                
+                signature TEXT,
+                typeref TEXT,
+                scope TEXT,
+                file_restricted BOOLEAN DEFAULT FALSE,
+                
+                class TEXT,
+                struct TEXT,
+                union_name TEXT,
+                enum TEXT,
+                access TEXT,
+                implementation TEXT,
+                inherits TEXT,
+                
+                extensions TEXT,
+                
+                raw_data TEXT,
+                
+                api_file TEXT NOT NULL,
+                indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_name ON ctags(name)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_kind ON ctags(kind)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_api_file ON ctags(api_file)
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS indexed_apis (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                api_name TEXT UNIQUE NOT NULL,
+                file_hash TEXT,
+                indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        conn.commit()
+
+
+def clear_api_from_db(api_name: str, db_path=None):
+    """Remove all entries for a specific API from the database."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+
+        cursor.execute("DELETE FROM ctags WHERE api_file = ?", (api_name,))
+        cursor.execute(
+            "DELETE FROM indexed_apis WHERE api_name = ?", (api_name,))
+
+        conn.commit()
+
+
+def index_api_file(path: Path, db_path=None):
     logger.info(f"Starting to index API file: {path}")
     line_count = 0
+    processed_count = 0
+    api_name = path.stem
 
-    with open(path, "r") as f:
-        for line in f:
-            if line:
-                line_count += 1
-                ctag_entry = json.loads(line)
-                if ctag_entry.get("kind") in ["function", "prototype"]:
-                    function_name = ctag_entry.get("name", "")
-                    signature = ctag_entry.get("signature", "")
-                    return_type = ctag_entry.get(
-                        "typeref", "").replace("typename:", "")
-                    function_info = {
-                        "name": function_name,
-                        "signature": signature,
-                        "return_type": return_type
-                    }
-                    DECLARATIONS.append(function_info)
-                    WORD_INDEX[function_name].append(len(DECLARATIONS) - 1)
+    clear_api_from_db(api_name, db_path)
 
-    INDEXED_APIS.append(path.stem)
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+
+        with open(path, "r") as f:
+            for line in f:
+                if line.strip():
+                    line_count += 1
+                    try:
+                        ctag_entry = json.loads(line)
+
+                        if ctag_entry.get("_type") != "tag":
+                            continue
+
+                        processed_count += 1
+                        name = ctag_entry.get("name", "")
+                        input_file = ctag_entry.get("path", "")
+                        pattern = ctag_entry.get("pattern", "")
+                        kind = ctag_entry.get("kind", "")
+                        line_num = ctag_entry.get("line")
+                        signature = ctag_entry.get("signature", "")
+                        typeref = ctag_entry.get("typeref", "")
+                        scope = ctag_entry.get("scope", "")
+                        file_restricted = ctag_entry.get("file", False)
+
+                        class_name = ctag_entry.get("class", "")
+                        struct_name = ctag_entry.get("struct", "")
+                        union_name = ctag_entry.get("union", "")
+                        enum_name = ctag_entry.get("enum", "")
+                        access = ctag_entry.get("access", "")
+                        implementation = ctag_entry.get("implementation", "")
+                        inherits = ctag_entry.get("inherits", "")
+
+                        raw_data = line.strip()
+
+                        cursor.execute("""
+                            INSERT INTO ctags (
+                                name, input_file, pattern, kind, line,
+                                signature, typeref, scope, file_restricted,
+                                class, struct, union_name, enum, access, implementation, inherits,
+                                extensions, api_file, raw_data
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            name, input_file, pattern, kind, line_num,
+                            signature, typeref, scope, file_restricted,
+                            class_name, struct_name, union_name, enum_name,
+                            access, implementation, inherits,
+                            None, api_name, raw_data
+                        ))
+
+                    except json.JSONDecodeError as e:
+                        logger.warning(
+                            f"Failed to parse JSON line {line_count}: {e}")
+                        continue
+
+        update_file_hash(api_name, calculate_file_hash(path), db_path, conn)
+
+        conn.commit()
+
     logger.info(
-        f"Indexing complete for {path}. Processed {line_count} API entries")
+        f"Indexing complete for {path}. Processed {processed_count} tag entries out of {line_count} total entries")
 
 
-def index_apis(apis_dir: Path):
+def index_apis(apis_dir: Path, db_path=None):
     logger.info(f"Starting to index APIs from directory: {apis_dir}")
 
     if not apis_dir.exists():
@@ -59,20 +215,64 @@ def index_apis(apis_dir: Path):
         logger.warning(f"No .ctags files found in {apis_dir}")
         return
 
+    files_to_index = []
+    files_skipped = 0
+    
     for api_file in api_files:
-        index_api_file(api_file)
+        api_name = api_file.stem
+        current_hash = calculate_file_hash(api_file)
+        stored_hash = get_stored_file_hash(api_name, db_path)
+        
+        if stored_hash == current_hash:
+            logger.info(f"Skipping {api_file.name} - no changes detected")
+            files_skipped += 1
+        else:
+            logger.info(f"File {api_file.name} has changed - will reindex")
+            files_to_index.append(api_file)
+    
+    if files_to_index:
+        logger.info(f"Indexing {len(files_to_index)} changed files (skipped {files_skipped})")
+        for api_file in files_to_index:
+            index_api_file(api_file, db_path)
+    else:
+        logger.info(f"All {len(api_files)} API files are up to date - no indexing needed")
 
-    logger.info(f"Indexing complete. Total words indexed: {len(WORD_INDEX)}")
-    logger.info(f"Total declarations: {len(DECLARATIONS)}")
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM ctags")
+        total_entries = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(DISTINCT name) FROM ctags")
+        unique_names = cursor.fetchone()[0]
+
+    logger.info(f"Indexing complete. Total entries: {total_entries}")
+    logger.info(f"Unique function names: {unique_names}")
 
 
-def lookup(query: str) -> Optional[list]:
+def lookup(query: str, db_path=None) -> Optional[list]:
     logger.info(f"Searching for query: '{query}'")
 
-    if query in WORD_INDEX:
-        declaration_indices = WORD_INDEX[query]
-        if declaration_indices:
-            matches = [DECLARATIONS[i] for i in declaration_indices]
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT name, signature, typeref 
+            FROM ctags 
+            WHERE name = ?
+        """, (query,))
+
+        rows = cursor.fetchall()
+
+        if rows:
+            matches = []
+            for row in rows:
+                name, signature, typeref = row
+                match_info = {
+                    "name": name,
+                    "signature": signature or "",
+                    "return_type": typeref.replace("typename:", "") if typeref else ""
+                }
+                matches.append(match_info)
+
             logger.info(f"Found {len(matches)} matches for '{query}'")
             return matches
 
@@ -117,10 +317,16 @@ def list_indexed_apis() -> dict:
     """
     logger.info("Listing indexed APIs requested")
 
-    if not INDEXED_APIS:
-        return {"indexed_apis": [], "message": "No API files have been indexed yet."}
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT api_name FROM indexed_apis ORDER BY indexed_at")
+        rows = cursor.fetchall()
 
-    return {"indexed_apis": INDEXED_APIS, "count": len(INDEXED_APIS)}
+        if not rows:
+            return {"indexed_apis": [], "message": "No API files have been indexed yet."}
+
+        api_names = [row[0] for row in rows]
+        return {"indexed_apis": api_names, "count": len(api_names)}
 
 
 @SERVER.tool()
@@ -203,7 +409,20 @@ def generate_ctags(include_directory: str, ctags_filename: str) -> dict:
 
 
 if __name__ == "__main__":
-    logger.info("Starting API Lookup MCP Server")
-    index_apis(Path("apis"))
-    logger.info("Starting FastMCP server...")
-    SERVER.run(transport="stdio")
+    try:
+        logger.info("Starting API Lookup MCP Server")
+        
+        logger.info("Initializing database...")
+        init_database()
+        logger.info("Database initialization complete")
+        
+        logger.info("Indexing APIs from 'apis' directory...")
+        index_apis(Path("apis"))
+        logger.info("API indexing complete")
+        
+        logger.info("Starting FastMCP server...")
+        SERVER.run(transport="stdio")
+        
+    except Exception as e:
+        logger.error(f"Fatal error in main: {str(e)}", exc_info=True)
+        raise

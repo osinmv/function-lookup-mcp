@@ -5,3 +5,4 @@ venv
 .mcp.json
 *.log
 apis
+*.db
