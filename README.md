@@ -1,6 +1,6 @@
 # Function Signature Lookup MCP Server
 
-An MCP server that provides function signature lookups for any API. Uses universal ctags to extract functions and prototypes for indexing header files.
+An MCP server that provides function signature lookups for any API. Uses SQLite database and universal ctags to extract functions and prototypes for indexing source files. Supports all languages that ctags supports including Python, C, Go, C++, JavaScript, Rust, Java, and many others.
 
 ## Requirements
 
@@ -17,7 +17,13 @@ claude mcp add api-lookup $(pwd)/run.sh -s user
 
 ## Extending the Index
 
-Just ask your coding agent to index your header folder. Alternatively, you can drop existing ctags files into the `apis/` folder and restart the MCP server to update the index.
+Just ask your coding agent to index your header folder. Alternatively, you can generate ctags files manually using universal ctags:
+
+```bash
+ctags --output-format=json --fields=+Sf --kinds-C=+p -R -f apis/your_api.ctags /path/to/your/headers
+```
+
+Or drop existing ctags files into the `apis/` folder and restart the MCP server to update the index.
 
 
 ## MCP functions
