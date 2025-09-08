@@ -34,7 +34,7 @@ Or drop existing ctags files into the `apis/` folder and restart the MCP server 
 
 **`list_api_files(api_name: str)`** - List all unique file paths for a specific API
 
-**`list_functions_by_file(file_path: str, api_name: str)`** - List all functions found in a specific file within an API
+**`list_functions_by_file(file_path: str)`** - List all functions found in a specific file
 
 **`generate_ctags(include_directory: str, ctags_filename: str)`** - Generate ctags from header files and add to index
 

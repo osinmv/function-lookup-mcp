@@ -18,9 +18,23 @@ class TestApiLookUpMCPServer(unittest.TestCase):
             apis_dir = temp_path / "apis"
             apis_dir.mkdir()
 
-            header_content = "int add_numbers(int a, int b);"
-            header_file = temp_path / "test.h"
-            header_file.write_text(header_content)
+            header1_content = """
+                            int add_numbers(int a, int b);
+                            int subtract_numbers(int a, int b);
+                            int multiply_numbers(int a, int b);
+                            float divide_numbers(float a, float b);
+                            void print_result(int result);
+            """
+            header1_file = temp_path / "math.h"
+            header1_file.write_text(header1_content)
+
+            header2_content = """
+                            char* get_string(void);
+                            int string_length(const char* str);
+                            void clear_buffer(void);
+            """
+            header2_file = temp_path / "string_utils.h"
+            header2_file.write_text(header2_content)
 
             try:
                 result = generate_ctags(str(temp_path), "test_header")
@@ -65,28 +79,58 @@ class TestApiLookUpMCPServer(unittest.TestCase):
                 self.assertIn("files", files_result)
                 self.assertIn("count", files_result)
                 self.assertEqual(files_result["api_name"], "test_header")
-                self.assertEqual(files_result["count"], 1)
-                self.assertEqual(len(files_result["files"]), 1)
-                self.assertIn("test.h", files_result["files"][0])
+                self.assertEqual(files_result["count"], 2)
+                self.assertEqual(len(files_result["files"]), 2)
 
                 empty_files_result = list_api_files("nonexistent_api")
                 self.assertIsInstance(empty_files_result, dict)
                 self.assertEqual(empty_files_result["count"], 0)
                 self.assertEqual(len(empty_files_result["files"]), 0)
 
-                file_path = files_result["files"][0]
-                functions_result = list_functions_by_file(
-                    file_path, "test_header")
+                math_file = [f for f in files_result["files"]
+                             if "math.h" in f][0]
+                functions_result = list_functions_by_file(math_file)
                 self.assertIsInstance(functions_result, dict)
                 self.assertIn("functions", functions_result)
                 self.assertIn("count", functions_result)
-                self.assertEqual(functions_result["count"], 1)
-                self.assertEqual(len(functions_result["functions"]), 1)
-                self.assertEqual(
-                    functions_result["functions"][0], "add_numbers")
+
+                self.assertEqual(functions_result["count"], 5)
+                self.assertEqual(len(functions_result["functions"]), 5)
+                self.assertIn("add_numbers", functions_result["functions"])
+
+                files_paginated = list_api_files(
+                    "test_header", offset=0, limit=1)
+                self.assertIsInstance(files_paginated, dict)
+                self.assertIn("offset", files_paginated)
+                self.assertIn("limit", files_paginated)
+                self.assertEqual(files_paginated["count"], 1)
+                self.assertEqual(files_paginated["offset"], 0)
+                self.assertEqual(files_paginated["limit"], 1)
+
+                files_offset = list_api_files("test_header", offset=1, limit=1)
+                self.assertEqual(files_offset["count"], 1)
+                self.assertEqual(files_offset["offset"], 1)
+
+                all_files = list_api_files("test_header")
+                math_file = [f for f in all_files["files"] if "math.h" in f][0]
+
+                functions_limited = list_functions_by_file(
+                    math_file, offset=0, limit=2)
+                self.assertIsInstance(functions_limited, dict)
+                self.assertIn("offset", functions_limited)
+                self.assertIn("limit", functions_limited)
+                self.assertEqual(functions_limited["count"], 2)
+                self.assertEqual(functions_limited["offset"], 0)
+                self.assertEqual(functions_limited["limit"], 2)
+
+                functions_offset = list_functions_by_file(
+                    math_file, offset=2, limit=3)
+                self.assertEqual(functions_offset["count"], 3)
+                self.assertEqual(functions_offset["offset"], 2)
+                self.assertEqual(functions_offset["limit"], 3)
 
                 empty_functions_result = list_functions_by_file(
-                    "nonexistent.h", "test_header")
+                    "nonexistent.h")
                 self.assertIsInstance(empty_functions_result, dict)
                 self.assertEqual(empty_functions_result["count"], 0)
                 self.assertEqual(len(empty_functions_result["functions"]), 0)

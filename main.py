@@ -332,7 +332,7 @@ def list_indexed_apis() -> dict:
 
 
 @SERVER.tool()
-def list_api_files(api_name: str) -> dict:
+def list_api_files(api_name: str, offset: int = 0, limit: int = 100) -> dict:
     """
     Extract a list of files/paths for a given API.
 
@@ -341,11 +341,13 @@ def list_api_files(api_name: str) -> dict:
 
     Args:
         api_name: The name of the API to get file paths for
+        offset: Number of files to skip (for pagination)
+        limit: Maximum number of files to return (default: 100)
 
     Returns:
-        A dictionary containing the list of file paths and count for the specified API.
+        A dictionary containing the list of file paths and pagination info.
     """
-    logger.info(f"Listing files for API: '{api_name}'")
+    logger.info(f"Listing files for API: '{api_name}' (offset={offset}, limit={limit})")
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -354,7 +356,8 @@ def list_api_files(api_name: str) -> dict:
             FROM ctags 
             WHERE api_file = ? AND input_file IS NOT NULL AND input_file != ''
             ORDER BY input_file
-        """, (api_name,))
+            LIMIT ? OFFSET ?
+        """, (api_name, limit, offset))
 
         rows = cursor.fetchall()
         file_paths = [row[0] for row in rows] if rows else []
@@ -363,35 +366,39 @@ def list_api_files(api_name: str) -> dict:
         return {
             "api_name": api_name,
             "files": file_paths,
-            "count": len(file_paths)
+            "count": len(file_paths),
+            "offset": offset,
+            "limit": limit
         }
 
 
 @SERVER.tool()
-def list_functions_by_file(file_path: str, api_name: str) -> dict:
+def list_functions_by_file(file_path: str, offset: int = 0, limit: int = 100) -> dict:
     """
     Extract all functions from a given file/path.
 
-    This tool returns all functions found in the specified file path within a specific API.
+    This tool returns all functions found in the specified file path.
 
     Args:
         file_path: The file path to get functions for
-        api_name: The API name to filter results to
+        offset: Number of functions to skip (for pagination)
+        limit: Maximum number of functions to return (default: 100)
 
     Returns:
-        A dictionary containing all functions found in the specified file.
+        A dictionary containing functions found in the specified file and pagination info.
     """
     logger.info(
-        f"Listing functions for file: '{file_path}' in API: '{api_name}'")
+        f"Listing functions for file: '{file_path}' (offset={offset}, limit={limit})")
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT name
             FROM ctags 
-            WHERE input_file = ? AND api_file = ? AND ( kind = 'function' OR kind = 'prototype' )
+            WHERE input_file = ? AND ( kind = 'function' OR kind = 'prototype' )
             ORDER BY line
-        """, (file_path, api_name))
+            LIMIT ? OFFSET ?
+        """, (file_path, limit, offset))
 
         rows = cursor.fetchall()
         functions = [row[0] for row in rows] if rows else []
@@ -399,7 +406,9 @@ def list_functions_by_file(file_path: str, api_name: str) -> dict:
         logger.info(f"Found {len(functions)} functions in file '{file_path}'")
         return {
             "functions": functions,
-            "count": len(functions)
+            "count": len(functions),
+            "offset": offset,
+            "limit": limit
         }
 
 
