@@ -399,7 +399,7 @@ def list_functions_by_file(file_path: str, offset: int = 0, limit: int = 100) ->
         cursor.execute("""
             SELECT name
             FROM ctags 
-            WHERE input_file = ? AND ( kind = 'function' OR kind = 'prototype' )
+            WHERE input_file = ? AND ( kind = 'function' OR kind = 'prototype' OR kind = 'func')
             ORDER BY line
             LIMIT ? OFFSET ?
         """, (file_path, limit, offset))
