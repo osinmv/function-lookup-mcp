@@ -37,7 +37,7 @@ class TestApiLookUpMCPServer(unittest.TestCase):
             header2_file.write_text(header2_content)
 
             try:
-                result = generate_ctags(str(temp_path), "test_header")
+                result = generate_ctags(str(temp_path))
 
                 self.assertIsInstance(result, dict)
                 self.assertTrue(result.get("success", False))
@@ -66,21 +66,27 @@ class TestApiLookUpMCPServer(unittest.TestCase):
                 self.assertIn("count", list_result)
                 self.assertEqual(list_result["count"], 1)
                 self.assertEqual(len(list_result["indexed_apis"]), 1)
-                self.assertEqual(list_result["indexed_apis"][0], "test_header")
+                self.assertEqual(
+                    list_result["indexed_apis"][0], temp_path.name)
 
                 nonexistent_search = search_api("nonexistent_function")
                 self.assertIsInstance(nonexistent_search, dict)
                 self.assertEqual(nonexistent_search["count"], 0)
                 self.assertEqual(len(nonexistent_search["matches"]), 0)
 
-                files_result = list_api_files("test_header")
+                files_result = list_api_files(temp_path.name)
                 self.assertIsInstance(files_result, dict)
                 self.assertIn("api_name", files_result)
                 self.assertIn("files", files_result)
                 self.assertIn("count", files_result)
-                self.assertEqual(files_result["api_name"], "test_header")
+                self.assertEqual(files_result["api_name"], temp_path.name)
                 self.assertEqual(files_result["count"], 2)
                 self.assertEqual(len(files_result["files"]), 2)
+
+                self.assertIn(f"{temp_path.name}/math.h",
+                              files_result["files"])
+                self.assertIn(f"{temp_path.name}/string_utils.h",
+                              files_result["files"])
 
                 empty_files_result = list_api_files("nonexistent_api")
                 self.assertIsInstance(empty_files_result, dict)
@@ -99,7 +105,7 @@ class TestApiLookUpMCPServer(unittest.TestCase):
                 self.assertIn("add_numbers", functions_result["functions"])
 
                 files_paginated = list_api_files(
-                    "test_header", offset=0, limit=1)
+                    temp_path.name, offset=0, limit=1)
                 self.assertIsInstance(files_paginated, dict)
                 self.assertIn("offset", files_paginated)
                 self.assertIn("limit", files_paginated)
@@ -107,11 +113,12 @@ class TestApiLookUpMCPServer(unittest.TestCase):
                 self.assertEqual(files_paginated["offset"], 0)
                 self.assertEqual(files_paginated["limit"], 1)
 
-                files_offset = list_api_files("test_header", offset=1, limit=1)
+                files_offset = list_api_files(
+                    temp_path.name, offset=1, limit=1)
                 self.assertEqual(files_offset["count"], 1)
                 self.assertEqual(files_offset["offset"], 1)
 
-                all_files = list_api_files("test_header")
+                all_files = list_api_files(temp_path.name)
                 math_file = [f for f in all_files["files"] if "math.h" in f][0]
 
                 functions_limited = list_functions_by_file(

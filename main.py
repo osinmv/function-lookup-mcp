@@ -156,7 +156,10 @@ def index_api_file(path: Path, db_path=None):
 
                         processed_count += 1
                         name = ctag_entry.get("name", "")
-                        input_file = ctag_entry.get("path", "")
+                        input_file = Path(ctag_entry.get("path", ""))
+                        input_file = "/".join(
+                            input_file.parts[input_file.parts.index(api_name):])
+
                         pattern = ctag_entry.get("pattern", "")
                         kind = ctag_entry.get("kind", "")
                         line_num = ctag_entry.get("line")
@@ -347,7 +350,8 @@ def list_api_files(api_name: str, offset: int = 0, limit: int = 100) -> dict:
     Returns:
         A dictionary containing the list of file paths and pagination info.
     """
-    logger.info(f"Listing files for API: '{api_name}' (offset={offset}, limit={limit})")
+    logger.info(
+        f"Listing files for API: '{api_name}' (offset={offset}, limit={limit})")
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -413,7 +417,7 @@ def list_functions_by_file(file_path: str, offset: int = 0, limit: int = 100) ->
 
 
 @SERVER.tool()
-def generate_ctags(include_directory: str, ctags_filename: str) -> dict:
+def generate_ctags(include_directory: str) -> dict:
     """
     Generate ctags files for function signature lookup.
 
@@ -428,10 +432,11 @@ def generate_ctags(include_directory: str, ctags_filename: str) -> dict:
     Returns:
         Dictionary with success status and details, or error information
     """
-    logger.info(
-        f"Generate ctags requested for directory: '{include_directory}', filename: '{ctags_filename}'")
-
     include_path = Path(include_directory)
+
+    logger.info(
+        f"Generate ctags requested for directory: '{include_directory}', filename: '{include_path.name}'")
+
     if not include_path.exists():
         error_msg = f"Include directory '{include_directory}' does not exist"
         logger.error(error_msg)
@@ -445,7 +450,7 @@ def generate_ctags(include_directory: str, ctags_filename: str) -> dict:
     apis_dir = Path("apis")
     apis_dir.mkdir(exist_ok=True)
 
-    output_file = apis_dir / f"{ctags_filename}.ctags"
+    output_file = apis_dir / f"{include_path.name}.ctags"
 
     try:
         cmd = [

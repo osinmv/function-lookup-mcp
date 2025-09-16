@@ -36,5 +36,5 @@ Or drop existing ctags files into the `apis/` folder and restart the MCP server 
 
 **`list_functions_by_file(file_path: str)`** - List all functions found in a specific file
 
-**`generate_ctags(include_directory: str, ctags_filename: str)`** - Generate ctags from header files and add to index
+**`generate_ctags(include_directory: str)`** - Generate ctags from header files and add to index
 
