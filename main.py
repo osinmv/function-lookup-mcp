@@ -421,13 +421,12 @@ def generate_ctags(include_directory: str) -> dict:
     """
     Generate ctags files for function signature lookup.
 
-    This tool recursively generates ctags from C/C++ header files in the specified
+    This tool recursively generates ctags from source files in the specified
     directory and all its subdirectories, then saves them to the apis directory
     for indexing by the MCP server.
 
     Args:
-        include_directory: Path to the directory containing C/C++ header files
-        ctags_filename: Name for the output ctags file (without extension)
+        include_directory: Path to the directory containing source files
 
     Returns:
         Dictionary with success status and details, or error information
