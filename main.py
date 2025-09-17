@@ -3,7 +3,9 @@ import hashlib
 import logging
 import sqlite3
 import subprocess
-from typing import Optional
+import fnmatch
+import os
+from typing import Optional, Set
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
@@ -416,6 +418,34 @@ def list_functions_by_file(file_path: str, offset: int = 0, limit: int = 100) ->
         }
 
 
+def get_gitignore_excludes(directory: Path) -> Set[str]:
+    gitignore_path = directory / '.gitignore'
+    excludes = set()
+
+    if not gitignore_path.exists():
+        return excludes
+
+    patterns = []
+    try:
+        with open(gitignore_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    patterns.append(line)
+    except Exception as e:
+        logger.warning(f"Failed to read .gitignore: {e}")
+        return excludes
+
+    for item in os.listdir(directory):
+        item_path = directory / item
+        for pattern in patterns:
+            if fnmatch.fnmatch(item, pattern):
+                excludes.add(str(item_path))
+                break
+
+    return excludes
+
+
 @SERVER.tool()
 def generate_ctags(include_directory: str) -> dict:
     """
@@ -459,8 +489,13 @@ def generate_ctags(include_directory: str) -> dict:
             "--kinds-C=+p",
             "-R",
             "-f", str(output_file),
-            str(include_path)
         ]
+
+        excludes = get_gitignore_excludes(include_path)
+        for pattern in excludes:
+            cmd.append(f"--exclude={pattern}")
+
+        cmd.append(str(include_path))
 
         logger.info(f"Running command: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True)

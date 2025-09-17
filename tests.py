@@ -147,6 +147,55 @@ class TestApiLookUpMCPServer(unittest.TestCase):
             finally:
                 os.chdir(Path(__file__).parent)
 
+    def test_gitignore_integration(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            os.chdir(temp_dir)
+
+            init_database()
+
+            apis_dir = temp_path / "apis"
+            apis_dir.mkdir()
+
+            gitignore_content = """venv
+                                    *.log
+                                    __pycache__"""
+            gitignore_file = temp_path / ".gitignore"
+            gitignore_file.write_text(gitignore_content)
+
+            header_content = "int main_function(void);"
+            header_file = temp_path / "main.h"
+            header_file.write_text(header_content)
+
+            venv_dir = temp_path / "venv"
+            venv_dir.mkdir()
+            venv_header = venv_dir / "venv_function.h"
+            venv_header.write_text("int venv_function(void);")
+
+            log_file = temp_path / "debug.log"
+            log_file.write_text("log content")
+
+            pycache_dir = temp_path / "__pycache__"
+            pycache_dir.mkdir()
+
+            try:
+                result = generate_ctags(str(temp_path))
+
+                self.assertTrue(result.get("success", False))
+
+                main_result = lookup("main_function")
+                self.assertIsNotNone(main_result)
+                self.assertEqual(len(main_result), 1)
+
+                venv_result = lookup("venv_function")
+                self.assertIsNone(venv_result)
+
+            except Exception as e:
+                self.fail(f"gitignore integration test failed: {str(e)}")
+            finally:
+                os.chdir(Path(__file__).parent)
+
 
 if __name__ == "__main__":
     unittest.main()
