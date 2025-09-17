@@ -17,7 +17,7 @@ claude mcp add api-lookup $(pwd)/run.sh -s user
 
 ## Extending the Index
 
-Just ask your coding agent to index your header folder. Alternatively, you can generate ctags files manually using universal ctags:
+Just ask your coding agent to index your header folder. The indexing process respects your project's `.gitignore` file to avoid indexing unwanted files. Alternatively, you can generate ctags files manually using universal ctags:
 
 ```bash
 ctags --output-format=json --fields=+Sf --kinds-C=+p -R -f apis/your_api.ctags /path/to/your/headers
