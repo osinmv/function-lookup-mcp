@@ -62,6 +62,19 @@ def update_file_hash(api_name: str, file_hash: str, db_path=None, conn=None):
         """, (api_name, file_hash))
 
 
+def check_fts5_support() -> bool:
+    """Check if SQLite has FTS5 support enabled."""
+    try:
+        with get_db_connection(":memory:") as conn:
+            cursor = conn.cursor()
+            cursor.execute("CREATE VIRTUAL TABLE test_fts USING fts5(content)")
+            cursor.execute("DROP TABLE test_fts")
+            return True
+    except sqlite3.OperationalError as e:
+        logger.error(f"FTS5 support check failed: {e}")
+        return False
+
+
 def init_database(db_path=None):
     """Initialize the SQLite database with comprehensive ctags schema."""
     with get_db_connection(db_path) as conn:
@@ -118,6 +131,37 @@ def init_database(db_path=None):
                 file_hash TEXT,
                 indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
+        """)
+
+        cursor.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS ctags_fts USING fts5(
+                raw_data,
+                content='ctags',
+                content_rowid='id'
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TRIGGER IF NOT EXISTS ctags_ai AFTER INSERT ON ctags BEGIN
+                INSERT INTO ctags_fts(rowid, raw_data)
+                VALUES (new.id, new.raw_data);
+            END
+        """)
+
+        cursor.execute("""
+            CREATE TRIGGER IF NOT EXISTS ctags_ad AFTER DELETE ON ctags BEGIN
+                INSERT INTO ctags_fts(ctags_fts, rowid, raw_data)
+                VALUES('delete', old.id, old.raw_data);
+            END
+        """)
+
+        cursor.execute("""
+            CREATE TRIGGER IF NOT EXISTS ctags_au AFTER UPDATE ON ctags BEGIN
+                INSERT INTO ctags_fts(ctags_fts, rowid, raw_data)
+                VALUES('delete', old.id, old.raw_data);
+                INSERT INTO ctags_fts(rowid, raw_data)
+                VALUES (new.id, new.raw_data);
+            END
         """)
 
         conn.commit()
@@ -288,28 +332,73 @@ def lookup(query: str, db_path=None) -> Optional[list]:
 
 
 @SERVER.tool()
-def search_api(function_name: str) -> dict:
+def search_declarations(name: str, offset: int = 0, limit: int = 10) -> dict:
     """
-    Search for API function declarations by function name.
+    Search for code declarations by name.
 
-    This tool searches through indexed API documentation to find function
-    declarations that match the given function name and returns all matching
-    function information including name, signature, and return type.
+    Returns definitions, declarations, and mentions of the given name.
 
     Args:
-        function_name: The name of the function to search for
+        name: Name to search for
+        offset: Number of results to skip (default: 0)
+        limit: Maximum results (default: 10)
 
     Returns:
-        A dictionary containing all matching function info with matches list and count.
+        Dictionary with matches and count.
     """
-    logger.info(f"API search requested for: '{function_name}'")
-    result = lookup(function_name)
-    if result:
-        logger.info(f"Returning {len(result)} results")
-        return {"matches": result, "count": len(result)}
-    else:
-        logger.info("No matches found for function_name")
-        return {"matches": [], "count": 0}
+    logger.info(f"Declaration search requested for: '{name}' (offset={offset}, limit={limit})")
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT c.name, c.kind, c.signature, c.typeref, c.input_file, c.line,
+                   c.scope, c.class, c.struct, c.union_name, c.enum, c.api_file, c.raw_data
+            FROM ctags c
+            INNER JOIN ctags_fts fts ON c.id = fts.rowid
+            WHERE ctags_fts MATCH ?
+            LIMIT ? OFFSET ?
+        """, (name, limit, offset))
+
+        rows = cursor.fetchall()
+
+        if rows:
+            matches = []
+            for row in rows:
+                elem_name, elem_kind, signature, typeref, file_path, line, scope, class_name, struct_name, union_name, enum_name, api_file, raw_data = row
+
+                match_info = {
+                    "name": elem_name,
+                    "kind": elem_kind,
+                    "signature": signature or "",
+                    "return_type": typeref.replace("typename:", "") if typeref else "",
+                    "file": file_path or "",
+                    "line": line or 0,
+                    "api": api_file,
+                    "scope": scope or "",
+                    "class": class_name or "",
+                    "struct": struct_name or "",
+                    "union": union_name or "",
+                    "enum": enum_name or "",
+                    "definition": raw_data or ""
+                }
+                matches.append(match_info)
+
+            logger.info(f"Found {len(matches)} matches for '{name}'")
+            return {
+                "matches": matches,
+                "count": len(matches),
+                "offset": offset,
+                "limit": limit
+            }
+
+    logger.info("No matches found")
+    return {
+        "matches": [],
+        "count": 0,
+        "offset": offset,
+        "limit": limit
+    }
 
 
 @SERVER.tool()
@@ -533,6 +622,15 @@ def generate_ctags(include_directory: str) -> dict:
 if __name__ == "__main__":
     try:
         logger.info("Starting API Lookup MCP Server")
+
+        logger.info("Checking FTS5 support...")
+        if not check_fts5_support():
+            logger.error("FTS5 support is not available in your SQLite installation.")
+            logger.error("Please ensure you have SQLite compiled with FTS5 enabled.")
+            logger.error("MCP server cannot start without FTS5 support.")
+            import sys
+            sys.exit(1)
+        logger.info("FTS5 support confirmed")
 
         logger.info("Initializing database...")
         init_database()

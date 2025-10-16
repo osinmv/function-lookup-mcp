@@ -2,7 +2,7 @@ import tempfile
 import unittest
 import os
 from pathlib import Path
-from main import lookup, generate_ctags, init_database, search_api, list_indexed_apis, list_api_files, list_functions_by_file
+from main import lookup, generate_ctags, init_database, search_declarations, list_indexed_apis, list_api_files, list_functions_by_file
 
 
 class TestApiLookUpMCPServer(unittest.TestCase):
@@ -51,7 +51,7 @@ class TestApiLookUpMCPServer(unittest.TestCase):
                 self.assertEqual(len(add_result), 1)
                 self.assertEqual(add_result[0]["name"], "add_numbers")
 
-                search_result = search_api("add_numbers")
+                search_result = search_declarations("add_numbers")
                 self.assertIsInstance(search_result, dict)
                 self.assertIn("matches", search_result)
                 self.assertIn("count", search_result)
@@ -69,7 +69,7 @@ class TestApiLookUpMCPServer(unittest.TestCase):
                 self.assertEqual(
                     list_result["indexed_apis"][0], temp_path.name)
 
-                nonexistent_search = search_api("nonexistent_function")
+                nonexistent_search = search_declarations("nonexistent_function")
                 self.assertIsInstance(nonexistent_search, dict)
                 self.assertEqual(nonexistent_search["count"], 0)
                 self.assertEqual(len(nonexistent_search["matches"]), 0)
