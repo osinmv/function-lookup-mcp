@@ -76,48 +76,17 @@ def check_fts5_support() -> bool:
 
 
 def init_database(db_path=None):
-    """Initialize the SQLite database with comprehensive ctags schema."""
+    """Initialize the SQLite database with simplified ctags schema."""
     with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS ctags (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                
-                name TEXT NOT NULL,
-                input_file TEXT,
-                pattern TEXT,
-                kind TEXT,
-                line INTEGER,
-                
-                signature TEXT,
-                typeref TEXT,
-                scope TEXT,
-                file_restricted BOOLEAN DEFAULT FALSE,
-                
-                class TEXT,
-                struct TEXT,
-                union_name TEXT,
-                enum TEXT,
-                access TEXT,
-                implementation TEXT,
-                inherits TEXT,
-                
-                extensions TEXT,
-                
-                raw_data TEXT,
-                
                 api_file TEXT NOT NULL,
+                raw_json TEXT NOT NULL,
                 indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_name ON ctags(name)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_kind ON ctags(kind)
         """)
 
         cursor.execute("""
@@ -135,7 +104,7 @@ def init_database(db_path=None):
 
         cursor.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS ctags_fts USING fts5(
-                raw_data,
+                raw_json,
                 content='ctags',
                 content_rowid='id'
             )
@@ -143,24 +112,24 @@ def init_database(db_path=None):
 
         cursor.execute("""
             CREATE TRIGGER IF NOT EXISTS ctags_ai AFTER INSERT ON ctags BEGIN
-                INSERT INTO ctags_fts(rowid, raw_data)
-                VALUES (new.id, new.raw_data);
+                INSERT INTO ctags_fts(rowid, raw_json)
+                VALUES (new.id, new.raw_json);
             END
         """)
 
         cursor.execute("""
             CREATE TRIGGER IF NOT EXISTS ctags_ad AFTER DELETE ON ctags BEGIN
-                INSERT INTO ctags_fts(ctags_fts, rowid, raw_data)
-                VALUES('delete', old.id, old.raw_data);
+                INSERT INTO ctags_fts(ctags_fts, rowid, raw_json)
+                VALUES('delete', old.id, old.raw_json);
             END
         """)
 
         cursor.execute("""
             CREATE TRIGGER IF NOT EXISTS ctags_au AFTER UPDATE ON ctags BEGIN
-                INSERT INTO ctags_fts(ctags_fts, rowid, raw_data)
-                VALUES('delete', old.id, old.raw_data);
-                INSERT INTO ctags_fts(rowid, raw_data)
-                VALUES (new.id, new.raw_data);
+                INSERT INTO ctags_fts(ctags_fts, rowid, raw_json)
+                VALUES('delete', old.id, old.raw_json);
+                INSERT INTO ctags_fts(rowid, raw_json)
+                VALUES (new.id, new.raw_json);
             END
         """)
 
@@ -201,43 +170,12 @@ def index_api_file(path: Path, db_path=None):
                             continue
 
                         processed_count += 1
-                        name = ctag_entry.get("name", "")
-                        input_file = Path(ctag_entry.get("path", ""))
-                        input_file = "/".join(
-                            input_file.parts[input_file.parts.index(api_name):])
-
-                        pattern = ctag_entry.get("pattern", "")
-                        kind = ctag_entry.get("kind", "")
-                        line_num = ctag_entry.get("line")
-                        signature = ctag_entry.get("signature", "")
-                        typeref = ctag_entry.get("typeref", "")
-                        scope = ctag_entry.get("scope", "")
-                        file_restricted = ctag_entry.get("file", False)
-
-                        class_name = ctag_entry.get("class", "")
-                        struct_name = ctag_entry.get("struct", "")
-                        union_name = ctag_entry.get("union", "")
-                        enum_name = ctag_entry.get("enum", "")
-                        access = ctag_entry.get("access", "")
-                        implementation = ctag_entry.get("implementation", "")
-                        inherits = ctag_entry.get("inherits", "")
-
-                        raw_data = line.strip()
+                        raw_json = line.strip()
 
                         cursor.execute("""
-                            INSERT INTO ctags (
-                                name, input_file, pattern, kind, line,
-                                signature, typeref, scope, file_restricted,
-                                class, struct, union_name, enum, access, implementation, inherits,
-                                extensions, api_file, raw_data
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            name, input_file, pattern, kind, line_num,
-                            signature, typeref, scope, file_restricted,
-                            class_name, struct_name, union_name, enum_name,
-                            access, implementation, inherits,
-                            None, api_name, raw_data
-                        ))
+                            INSERT INTO ctags (api_file, raw_json)
+                            VALUES (?, ?)
+                        """, (api_name, raw_json))
 
                     except json.JSONDecodeError as e:
                         logger.warning(
@@ -292,43 +230,11 @@ def index_apis(apis_dir: Path, db_path=None):
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM ctags")
         total_entries = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(DISTINCT name) FROM ctags")
+        cursor.execute("SELECT COUNT(DISTINCT json_extract(raw_json, '$.name')) FROM ctags")
         unique_names = cursor.fetchone()[0]
 
     logger.info(f"Indexing complete. Total entries: {total_entries}")
     logger.info(f"Unique function names: {unique_names}")
-
-
-def lookup(query: str, db_path=None) -> Optional[list]:
-    logger.info(f"Searching for query: '{query}'")
-
-    with get_db_connection(db_path) as conn:
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT name, signature, typeref 
-            FROM ctags 
-            WHERE name = ?
-        """, (query,))
-
-        rows = cursor.fetchall()
-
-        if rows:
-            matches = []
-            for row in rows:
-                name, signature, typeref = row
-                match_info = {
-                    "name": name,
-                    "signature": signature or "",
-                    "return_type": typeref.replace("typename:", "") if typeref else ""
-                }
-                matches.append(match_info)
-
-            logger.info(f"Found {len(matches)} matches for '{query}'")
-            return matches
-
-    logger.info("No match found")
-    return None
 
 
 @SERVER.tool()
@@ -352,8 +258,16 @@ def search_declarations(name: str, offset: int = 0, limit: int = 10) -> dict:
         cursor = conn.cursor()
 
         cursor.execute("""
-            SELECT c.name, c.kind, c.signature, c.typeref, c.input_file, c.line,
-                   c.scope, c.class, c.struct, c.union_name, c.enum, c.api_file, c.raw_data
+            SELECT COUNT(*)
+            FROM ctags c
+            INNER JOIN ctags_fts fts ON c.id = fts.rowid
+            WHERE ctags_fts MATCH ?
+        """, (name,))
+
+        total_count = cursor.fetchone()[0]
+
+        cursor.execute("""
+            SELECT c.raw_json
             FROM ctags c
             INNER JOIN ctags_fts fts ON c.id = fts.rowid
             WHERE ctags_fts MATCH ?
@@ -361,44 +275,15 @@ def search_declarations(name: str, offset: int = 0, limit: int = 10) -> dict:
         """, (name, limit, offset))
 
         rows = cursor.fetchall()
+        matches = [json.loads(row[0]) for row in rows]
 
-        if rows:
-            matches = []
-            for row in rows:
-                elem_name, elem_kind, signature, typeref, file_path, line, scope, class_name, struct_name, union_name, enum_name, api_file, raw_data = row
-
-                match_info = {
-                    "name": elem_name,
-                    "kind": elem_kind,
-                    "signature": signature or "",
-                    "return_type": typeref.replace("typename:", "") if typeref else "",
-                    "file": file_path or "",
-                    "line": line or 0,
-                    "api": api_file,
-                    "scope": scope or "",
-                    "class": class_name or "",
-                    "struct": struct_name or "",
-                    "union": union_name or "",
-                    "enum": enum_name or "",
-                    "definition": raw_data or ""
-                }
-                matches.append(match_info)
-
-            logger.info(f"Found {len(matches)} matches for '{name}'")
-            return {
-                "matches": matches,
-                "count": len(matches),
-                "offset": offset,
-                "limit": limit
-            }
-
-    logger.info("No matches found")
-    return {
-        "matches": [],
-        "count": 0,
-        "offset": offset,
-        "limit": limit
-    }
+        logger.info(f"Found {total_count} total matches for '{name}', returning {len(matches)}")
+        return {
+            "matches": matches,
+            "count": total_count,
+            "offset": offset,
+            "limit": limit
+        }
 
 
 @SERVER.tool()
@@ -446,22 +331,31 @@ def list_api_files(api_name: str, offset: int = 0, limit: int = 100) -> dict:
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
+
         cursor.execute("""
-            SELECT DISTINCT input_file 
-            FROM ctags 
-            WHERE api_file = ? AND input_file IS NOT NULL AND input_file != ''
-            ORDER BY input_file
+            SELECT COUNT(DISTINCT json_extract(raw_json, '$.path'))
+            FROM ctags
+            WHERE api_file = ? AND json_extract(raw_json, '$.path') IS NOT NULL
+        """, (api_name,))
+
+        total_count = cursor.fetchone()[0]
+
+        cursor.execute("""
+            SELECT DISTINCT json_extract(raw_json, '$.path') as file_path
+            FROM ctags
+            WHERE api_file = ? AND json_extract(raw_json, '$.path') IS NOT NULL
+            ORDER BY file_path
             LIMIT ? OFFSET ?
         """, (api_name, limit, offset))
 
         rows = cursor.fetchall()
-        file_paths = [row[0] for row in rows] if rows else []
+        file_paths = [row[0] for row in rows]
 
-        logger.info(f"Found {len(file_paths)} files for API '{api_name}'")
+        logger.info(f"Found {total_count} files for API '{api_name}', returning {len(file_paths)}")
         return {
             "api_name": api_name,
             "files": file_paths,
-            "count": len(file_paths),
+            "count": total_count,
             "offset": offset,
             "limit": limit
         }
@@ -487,21 +381,32 @@ def list_functions_by_file(file_path: str, offset: int = 0, limit: int = 100) ->
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
+
         cursor.execute("""
-            SELECT name
-            FROM ctags 
-            WHERE input_file = ? AND ( kind = 'function' OR kind = 'prototype' OR kind = 'func')
-            ORDER BY line
+            SELECT COUNT(*)
+            FROM ctags
+            WHERE json_extract(raw_json, '$.path') = ?
+            AND json_extract(raw_json, '$.kind') IN ('function', 'prototype', 'func')
+        """, (file_path,))
+
+        total_count = cursor.fetchone()[0]
+
+        cursor.execute("""
+            SELECT json_extract(raw_json, '$.name')
+            FROM ctags
+            WHERE json_extract(raw_json, '$.path') = ?
+            AND json_extract(raw_json, '$.kind') IN ('function', 'prototype', 'func')
+            ORDER BY json_extract(raw_json, '$.line')
             LIMIT ? OFFSET ?
         """, (file_path, limit, offset))
 
         rows = cursor.fetchall()
-        functions = [row[0] for row in rows] if rows else []
+        functions = [row[0] for row in rows]
 
-        logger.info(f"Found {len(functions)} functions in file '{file_path}'")
+        logger.info(f"Found {total_count} functions in file '{file_path}', returning {len(functions)}")
         return {
             "functions": functions,
-            "count": len(functions),
+            "count": total_count,
             "offset": offset,
             "limit": limit
         }
@@ -550,10 +455,10 @@ def generate_ctags(include_directory: str) -> dict:
     Returns:
         Dictionary with success status and details, or error information
     """
-    include_path = Path(include_directory)
+    include_path = Path(include_directory).resolve()
 
     logger.info(
-        f"Generate ctags requested for directory: '{include_directory}', filename: '{include_path.name}'")
+        f"Generate ctags requested for directory: '{include_directory}', resolved to: '{include_path}'")
 
     if not include_path.exists():
         error_msg = f"Include directory '{include_directory}' does not exist"

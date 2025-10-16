@@ -2,7 +2,7 @@ import tempfile
 import unittest
 import os
 from pathlib import Path
-from main import lookup, generate_ctags, init_database, search_declarations, list_indexed_apis, list_api_files, list_functions_by_file
+from main import generate_ctags, init_database, search_declarations, list_indexed_apis, list_api_files, list_functions_by_file
 
 
 class TestApiLookUpMCPServer(unittest.TestCase):
@@ -45,12 +45,6 @@ class TestApiLookUpMCPServer(unittest.TestCase):
                 self.assertEqual(
                     result["message"], "ctags generation and indexing complete")
 
-                add_result = lookup("add_numbers")
-                self.assertIsNotNone(add_result)
-                self.assertIsInstance(add_result, list)
-                self.assertEqual(len(add_result), 1)
-                self.assertEqual(add_result[0]["name"], "add_numbers")
-
                 search_result = search_declarations("add_numbers")
                 self.assertIsInstance(search_result, dict)
                 self.assertIn("matches", search_result)
@@ -83,9 +77,9 @@ class TestApiLookUpMCPServer(unittest.TestCase):
                 self.assertEqual(files_result["count"], 2)
                 self.assertEqual(len(files_result["files"]), 2)
 
-                self.assertIn(f"{temp_path.name}/math.h",
+                self.assertIn(f"/tmp/{temp_path.name}/math.h",
                               files_result["files"])
-                self.assertIn(f"{temp_path.name}/string_utils.h",
+                self.assertIn(f"/tmp/{temp_path.name}/string_utils.h",
                               files_result["files"])
 
                 empty_files_result = list_api_files("nonexistent_api")
@@ -109,14 +103,16 @@ class TestApiLookUpMCPServer(unittest.TestCase):
                 self.assertIsInstance(files_paginated, dict)
                 self.assertIn("offset", files_paginated)
                 self.assertIn("limit", files_paginated)
-                self.assertEqual(files_paginated["count"], 1)
+                self.assertEqual(files_paginated["count"], 2)
                 self.assertEqual(files_paginated["offset"], 0)
                 self.assertEqual(files_paginated["limit"], 1)
+                self.assertEqual(len(files_paginated["files"]), 1)
 
                 files_offset = list_api_files(
                     temp_path.name, offset=1, limit=1)
-                self.assertEqual(files_offset["count"], 1)
+                self.assertEqual(files_offset["count"], 2)
                 self.assertEqual(files_offset["offset"], 1)
+                self.assertEqual(len(files_offset["files"]), 1)
 
                 all_files = list_api_files(temp_path.name)
                 math_file = [f for f in all_files["files"] if "math.h" in f][0]
@@ -126,15 +122,17 @@ class TestApiLookUpMCPServer(unittest.TestCase):
                 self.assertIsInstance(functions_limited, dict)
                 self.assertIn("offset", functions_limited)
                 self.assertIn("limit", functions_limited)
-                self.assertEqual(functions_limited["count"], 2)
+                self.assertEqual(functions_limited["count"], 5)
                 self.assertEqual(functions_limited["offset"], 0)
                 self.assertEqual(functions_limited["limit"], 2)
+                self.assertEqual(len(functions_limited["functions"]), 2)
 
                 functions_offset = list_functions_by_file(
                     math_file, offset=2, limit=3)
-                self.assertEqual(functions_offset["count"], 3)
+                self.assertEqual(functions_offset["count"], 5)
                 self.assertEqual(functions_offset["offset"], 2)
                 self.assertEqual(functions_offset["limit"], 3)
+                self.assertEqual(len(functions_offset["functions"]), 3)
 
                 empty_functions_result = list_functions_by_file(
                     "nonexistent.h")
@@ -184,12 +182,12 @@ class TestApiLookUpMCPServer(unittest.TestCase):
 
                 self.assertTrue(result.get("success", False))
 
-                main_result = lookup("main_function")
+                main_result = search_declarations("main_function")
                 self.assertIsNotNone(main_result)
-                self.assertEqual(len(main_result), 1)
+                self.assertEqual(main_result["count"], 1)
 
-                venv_result = lookup("venv_function")
-                self.assertIsNone(venv_result)
+                venv_result = search_declarations("venv_function")
+                self.assertEqual(venv_result["count"], 0)
 
             except Exception as e:
                 self.fail(f"gitignore integration test failed: {str(e)}")
